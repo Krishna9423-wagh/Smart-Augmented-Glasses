@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Augmented Glasses — Live Face Recognition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #08090d;
+      --surface:   #0f1117;
+      --card:      #13161f;
+      --border:    #1e2235;
+      --accent:    #00d4ff;
+      --accent2:   #7c3aed;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --glow:      0 0 30px rgba(0,212,255,0.15);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background grid ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 36px;
+      background: rgba(15,17,23,0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+
+    .logo-icon {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 20px rgba(0,212,255,0.4);
+    }
+
+    .logo h1 {
+      font-size: 1.2rem; font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .logo p {
+      font-size: 0.7rem; color: var(--muted); font-weight: 400;
+      -webkit-text-fill-color: var(--muted);
+    }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    /* ── Main layout ── */
+    main {
+      position: relative; z-index: 1;
+      max-width: 1300px; margin: 0 auto;
+      padding: 32px 24px;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 24px;
+    }
+
+    /* ── Video card ── */
+    .video-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: var(--glow);
+      position: relative;
+    }
+
+    .video-top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .video-top-bar span {
+      font-size: 0.8rem; color: var(--muted); font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+
+    .rec-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.75rem; font-weight: 700; color: var(--red);
+      letter-spacing: 0.08em;
+    }
+
+    .rec-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+      animation: pulse 1s infinite;
+    }
+
+    .video-wrapper {
+      position: relative;
+      background: #000;
+    }
+
+    #stream {
+      display: block;
+      width: 100%;
+      max-height: 560px;
+      object-fit: cover;
+    }
+
+    /* HUD overlay corners */
+    .hud-corner {
+      position: absolute;
+      width: 24px; height: 24px;
+      border-color: var(--accent);
+      border-style: solid;
+      opacity: 0.7;
+    }
+    .hud-tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+    .hud-tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+    .hud-bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+    .hud-br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+    .scan-line {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+      animation: scan 3s linear infinite;
+    }
+
+    @keyframes scan {
+      0%   { top: 0%; }
+      100% { top: 100%; }
+    }
+
+    /* ── Side panel ── */
+    .side-panel {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+
+    .panel-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+    }
+
+    .panel-card h3 {
+      font-size: 0.7rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+
+    /* Stat grid */
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2rem; font-weight: 900;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.68rem; color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-top: 4px;
+    }
+
+    /* Model status */
+    .model-status {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .model-status.ok  { border-color: rgba(34,197,94,0.3); }
+    .model-status.err { border-color: rgba(239,68,68,0.3); }
+
+    .model-icon { font-size: 1.2rem; }
+    .model-info p:first-child { font-size: 0.82rem; font-weight: 600; }
+    .model-info p:last-child  { font-size: 0.7rem; color: var(--muted); }
+
+    /* Detected names list */
+    #names-list {
+      display: flex; flex-direction: column; gap: 8px;
+      min-height: 60px;
+    }
+
+    .name-tag {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 10px;
+      font-size: 0.85rem; font-weight: 600;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .name-tag .avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 900; color: #000;
+      flex-shrink: 0;
+    }
+
+    .empty-state {
+      color: var(--muted); font-size: 0.8rem;
+      text-align: center; padding: 16px 0;
+    }
+
+    /* Log */
+    #log-list {
+      max-height: 200px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+
+    #log-list::-webkit-scrollbar { width: 4px; }
+    #log-list::-webkit-scrollbar-track { background: transparent; }
+    #log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .log-entry {
+      font-size: 0.72rem; color: var(--muted);
+      padding: 5px 10px;
+      background: var(--surface);
+      border-radius: 6px;
+      border-left: 2px solid var(--accent);
+      font-family: 'Outfit', monospace;
+    }
+
+    .log-entry span { color: var(--accent); }
+
+    /* Footer */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .side-panel { flex-direction: row; flex-wrap: wrap; }
+      .panel-card { flex: 1 1 250px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🕶️</div>
+    <div>
+      <h1>Smart Augmented Glasses</h1>
+      <p>AI-Powered Face Recognition System</p>
+    </div>
+  </div>
+  <div class="status-pill">
+    <div class="dot"></div>
+    <span>LIVE</span>
+  </div>
+</header>
+
+<!-- ── Main ── -->
+<main>
+
+  <!-- Video feed -->
+  <div class="video-card">
+    <div class="video-top-bar">
+      <span>📡 Live Camera Feed</span>
+      <div class="rec-badge"><div class="rec-dot"></div> REC</div>
+    </div>
+    <div class="video-wrapper">
+      <img id="stream" src="/video_feed" alt="Live Face Recognition Feed"/>
+      <div class="hud-corner hud-tl"></div>
+      <div class="hud-corner hud-tr"></div>
+      <div class="hud-corner hud-bl"></div>
+      <div class="hud-corner hud-br"></div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side-panel">
+
+    <!-- Stats -->
+    <div class="panel-card">
+      <h3>📊 Detection Stats</h3>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-value" id="face-count">0</div>
+          <div class="stat-label">Faces</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="frame-count">0</div>
+          <div class="stat-label">Frames</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Model status -->
+    <div class="panel-card">
+      <h3>🧠 AI Model</h3>
+      <div class="model-status" id="model-status">
+        <div class="model-icon">⏳</div>
+        <div class="model-info">
+          <p>Checking...</p>
+          <p>LBPH Face Recognizer</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detected names -->
+    <div class="panel-card">
+      <h3>👤 Detected People</h3>
+      <div id="names-list">
+        <div class="empty-state">No faces detected yet...</div>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="panel-card">
+      <h3>📋 Activity Log</h3>
+      <div id="log-list"></div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  🕶️ Smart Augmented Glasses — Hackathon 4.0 &nbsp;|&nbsp; Running on
+  <span style="color:var(--accent)">http://localhost:8080</span>
+</footer>
+
+<script>
+  let frameCount = 0;
+  let lastNames = [];
+
+  function addLog(msg) {
+    const list = document.getElementById('log-list');
+    const now = new Date().toLocaleTimeString();
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    el.innerHTML = `<span>[${now}]</span> ${msg}`;
+    list.prepend(el);
+    if (list.children.length > 20) list.removeChild(list.lastChild);
+  }
+
+  function updateStatus() {
+    fetch('/status')
+      .then(r => r.json())
+      .then(data => {
+        // Face count
+        document.getElementById('face-count').textContent = data.faces_detected;
+
+        // Frame counter
+        frameCount++;
+        document.getElementById('frame-count').textContent = frameCount;
+
+        // Model status
+        const ms = document.getElementById('model-status');
+        if (data.model_loaded) {
+          ms.className = 'model-status ok';
+          ms.innerHTML = `<div class="model-icon">✅</div>
+            <div class="model-info">
+              <p style="color:#22c55e">Model Loaded</p>
+              <p>LBPH Face Recognizer</p>
+            </div>`;
+        } else {
+          ms.className = 'model-status err';
+          ms.innerHTML = `<div class="model-icon">⚠️</div>
+            <div class="model-info">
+              <p style="color:#ef4444">No Model Found</p>
+              <p>Run dataSet_trainer.py first</p>
+            </div>`;
+        }
+
+        // Names
+        const namesList = document.getElementById('names-list');
+        const names = data.names || [];
+
+        // Log new detections
+        const newNames = names.filter(n => !lastNames.includes(n));
+        newNames.forEach(n => addLog(`Detected: <strong style="color:var(--accent)">${n}</strong>`));
+        lastNames = [...names];
+
+        if (names.length === 0) {
+          namesList.innerHTML = '<div class="empty-state">No faces detected...</div>';
+        } else {
+          namesList.innerHTML = names.map(name => `
+            <div class="name-tag">
+              <div class="avatar">${name[0].toUpperCase()}</div>
+              <span>${name}</span>
+            </div>`).join('');
+        }
+      })
+      .catch(() => {});
+  }
+
+  // Poll every 800ms
+  setInterval(updateStatus, 800);
+  updateStatus();
+  addLog('System initialized — camera active');
+  addLog('Face detection engine: Haar Cascade');
+  addLog('Recognition engine: LBPH (OpenCV)');
+</script>
+</body>
+</html>
